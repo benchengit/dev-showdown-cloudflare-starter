@@ -63,9 +63,49 @@ export default {
 					answer: result.text || 'N/A',
 				});
 			}
-				default:
-					return new Response('Solver not found', { status: 404 });
+			case 'JSON_MODE': {
+				if (!env.DEV_SHOWDOWN_API_KEY) {
+					throw new Error('DEV_SHOWDOWN_API_KEY is required');
+				}
+
+				const text = payload.text;
+				if (!text) {
+					return new Response('Missing text in request payload', {
+						status: 400,
+					});
+				}
+
+				const workshopLlm = createWorkshopLlm(env.DEV_SHOWDOWN_API_KEY, interactionId);
+				const result = await generateText({
+					model: workshopLlm.chatModel('deli-4'),
+					system:
+						'You are a product description assistant. Take the input text and return a single valid JSON object describing the product, including fields such as name, description, category, price, and features.',
+					prompt: text,
+				});
+
+				const rawOutput = result.text?.trim() || '';
+				let productJson: unknown;
+				try {
+					productJson = JSON.parse(rawOutput);
+				} catch {
+					const jsonStart = rawOutput.indexOf('{');
+					const jsonEnd = rawOutput.lastIndexOf('}');
+					if (jsonStart !== -1 && jsonEnd !== -1 && jsonEnd > jsonStart) {
+						try {
+							productJson = JSON.parse(rawOutput.slice(jsonStart, jsonEnd + 1));
+						} catch {
+							productJson = { raw: rawOutput };
+						}
+					} else {
+						productJson = { raw: rawOutput };
+					}
+				}
+
+				return Response.json(productJson);
 			}
+			default:
+				return new Response('Solver not found', { status: 404 });
+		}
 	},
 	} satisfies ExportedHandler<Env>;
 
